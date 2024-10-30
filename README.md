@@ -10,18 +10,27 @@ This bash script provides a convenient way to manage entries in your `/etc/hosts
 - **Remove Entry**: Remove a specified host entry from `/etc/hosts`.
 - **Wipe All User-Added Entries**: Remove all entries except default localhost entries, with multiple confirmation steps to prevent accidental deletion.
 
-## Usage
+## Installation for Direct Terminal Access
 
-Clone or download this script and make it executable:
+After downloading and making the script executable, you can move it to `/usr/bin` to run it from anywhere in the terminal:
 
 ```bash
-chmod +x manage-hosts.sh
+chmod +x manage-hosts
+sudo mv manage-hosts /usr/bin/
 ```
 
-Run the script:
+Now, you can run the script from any directory by typing:
 
 ```bash
-./manage-hosts.sh
+manage-hosts
+```
+
+## Usage
+
+Run the script to display a menu with the following options:
+
+```bash
+manage-hosts
 ```
 
 ### Menu Options
