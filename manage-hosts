@@ -8,13 +8,13 @@ YELLOW="\033[0;33m"
 RED_BG="\033[41m"
 RESET="\033[0m"
 
-# Default entries to keep or restore if missing
+# Default entries to keep or restore if missing, with correct indentation
 DEFAULT_ENTRIES=(
-  "127.0.0.1 localhost"
-  "127.0.1.1 kali"
-  "::1 localhost ip6-localhost ip6-loopback"
-  "ff02::1 ip6-allnodes"
-  "ff02::2 ip6-allrouters"
+  "127.0.0.1       localhost"
+  "127.0.1.1       kali"
+  "::1             localhost ip6-localhost ip6-loopback"
+  "ff02::1         ip6-allnodes"
+  "ff02::2         ip6-allrouters"
 )
 
 # Ensure script is run as sudo
@@ -26,7 +26,9 @@ fi
 # Function to check and restore default entries if missing
 check_and_restore_defaults() {
   for entry in "${DEFAULT_ENTRIES[@]}"; do
-    if ! grep -qF "$entry" /etc/hosts; then
+    # Extract the IP portion to match more accurately
+    ip_part=$(echo "$entry" | awk '{print $1}')
+    if ! grep -q "^$ip_part" /etc/hosts; then
       echo "$entry" | sudo tee -a /etc/hosts > /dev/null
       echo -e "${YELLOW}Restored missing default entry:${RESET} $entry"
     fi
