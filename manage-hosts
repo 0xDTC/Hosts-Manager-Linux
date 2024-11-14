@@ -8,7 +8,7 @@ YELLOW="\033[0;33m"
 RED_BG="\033[41m"
 RESET="\033[0m"
 
-# Default entries to keep or restore if missing, with correct indentation
+# Default entries with consistent indentation
 DEFAULT_ENTRIES=(
   "127.0.0.1       localhost"
   "127.0.1.1       kali"
@@ -26,7 +26,6 @@ fi
 # Function to check and restore default entries if missing
 check_and_restore_defaults() {
   for entry in "${DEFAULT_ENTRIES[@]}"; do
-    # Extract the IP portion to match more accurately
     ip_part=$(echo "$entry" | awk '{print $1}')
     if ! grep -q "^$ip_part" /etc/hosts; then
       echo "$entry" | sudo tee -a /etc/hosts > /dev/null
@@ -44,12 +43,18 @@ usage() {
   echo -e "${RED_BG}5. Wipe all non-localhost entries in /etc/hosts (Confirmation required)${RESET}"
 }
 
+# Function to add consistent indentation
+add_entry_with_indent() {
+  local ip=$1
+  local hostname=$2
+  printf "%-15s %s\n" "$ip" "$hostname" | sudo tee -a /etc/hosts > /dev/null
+}
+
 # Function to wipe non-default entries in /etc/hosts
 wipe_hosts() {
   read -p "Are you sure you want to wipe all non-localhost entries? (y/n): " confirm
   if [[ "$confirm" == "y" ]]; then
-    # Preserve only the default entries in /etc/hosts
-    sudo cp /etc/hosts /tmp/hosts_backup  # Backup existing hosts file
+    sudo cp /etc/hosts /tmp/hosts_backup
     grep -E "127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters" /tmp/hosts_backup | sudo tee /etc/hosts > /dev/null
     echo -e "${RED}Non-localhost entries wiped.${RESET}"
   else
@@ -57,14 +62,16 @@ wipe_hosts() {
   fi
 }
 
-# Function to update host IP with input validation
+# Function to update host IP with input validation and indentation
 update_host_ip() {
   echo -e "\nUser-added entries:\n"
   awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++; print count, \$0}" /etc/hosts
-  read -p "Choose an entry by number to update its IP: " number
+  read -p "Choose an entry by number to update its IP (or press Enter to return to the main menu): " number
 
-  # Check if the selection is a valid number
-  if ! [[ "$number" =~ ^[0-9]+$ ]]; then
+  if [[ -z "$number" ]]; then
+    echo "Returning to main menu..."
+    return
+  elif ! [[ "$number" =~ ^[0-9]+$ ]]; then
     echo "Invalid selection. Please enter a valid number."
     return
   fi
@@ -78,80 +85,116 @@ update_host_ip() {
   echo "Current entry: $entry"
   read -p "Enter the new IP address: " new_ip
 
-  # Validate IP format
   if ! [[ $new_ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
     echo "Invalid IP address format."
     return
   fi
 
-  # Get hostnames from the selected entry and update IP
   hostnames=$(echo "$entry" | awk '{$1=""; print $0}' | sed 's/^[ \t]*//')
-  sed -i "s/^.*$entry\$/$new_ip $hostnames/" /etc/hosts
+  sed -i "/$entry/d" /etc/hosts  # Remove old entry
+  add_entry_with_indent "$new_ip" "$hostnames"  # Add with consistent indentation
   echo "IP address updated for $hostnames."
 }
 
-# Check and restore default entries before executing options
-check_and_restore_defaults
+# Main menu loop
+exit_code=0
+while true; do
+  usage
+  read -p "Select an option (1-5): " option
 
-# Main menu
-usage
-read -p "Select an option (1-5): " option
-
-case $option in
-  1) # Add new host
-    read -p "Provide IP: " ip
-    read -p "Provide hostname: " hostname
-    if [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && [[ $hostname =~ ^[a-zA-Z0-9.-]+$ ]]; then
-      if grep -q "$ip" /etc/hosts; then
-        echo "This IP already exists. Use option 3 to append a sub-hostname."
-      else
-        echo "$ip    $hostname" >> /etc/hosts
-        echo "New host added."
+  case $option in
+    1) # Add new host
+      while true; do
+        read -p "Provide IP (or press Enter to return to the main menu): " ip
+        if [[ -z "$ip" ]]; then
+          echo "Returning to main menu..."
+          break
+        fi
+        read -p "Provide hostname: " hostname
+        if [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && [[ $hostname =~ ^[a-zA-Z0-9.-]+$ ]]; then
+          if grep -q "$ip" /etc/hosts; then
+            echo "This IP already exists. Use option 3 to append a sub-hostname."
+          else
+            add_entry_with_indent "$ip" "$hostname"
+            echo "New host added with consistent indentation."
+          fi
+        else
+          echo "Invalid IP or hostname format."
+        fi
+        read -p "Add another host? (y/n): " add_more
+        [[ "$add_more" != "y" ]] && break
+      done
+      ;;
+    2) # Update existing host IP
+      update_host_ip
+      ;;
+    3) # Append sub-hostname
+      echo -e "\nUser-added entries:\n"
+      awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++; print count, \$0}" /etc/hosts
+      read -p "Choose entry by number (or press Enter to return to the main menu): " number
+      if [[ -z "$number" ]]; then
+        echo "Returning to main menu..."
+        continue
+      elif ! [[ "$number" =~ ^[0-9]+$ ]]; then
+        echo "Invalid selection. Please enter a valid number."
+        continue
       fi
-    else
-      echo "Invalid IP or hostname format."
-    fi
-    ;;
-  2) # Update existing host IP
-    update_host_ip
-    ;;
-  3) # Append sub-hostname
-    echo -e "\nUser-added entries:\n"
-    awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++; print count, \$0}" /etc/hosts
-    read -p "Choose entry by number: " number
-    entry=$(awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++} count==$number" /etc/hosts)
-    if [ -z "$entry" ]; then
-      echo "Invalid selection. No such entry."
-      exit 1
-    fi
-    read -p "Sub-hostname to append: " subhostname
-    if [[ $subhostname =~ ^[a-zA-Z0-9.-]+$ ]]; then
-      if ! grep -q "$subhostname" <<<"$entry"; then
-        sed -i "s/^$entry\$/$entry $subhostname/" /etc/hosts
-        echo "Sub-hostname appended."
-      else
-        echo "Sub-hostname already exists in entry."
+      entry=$(awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++} count==$number" /etc/hosts)
+      if [ -z "$entry" ]; then
+        echo "Invalid selection. No such entry."
+        continue
       fi
-    else
-      echo "Invalid sub-hostname format."
-    fi
-    ;;
-  4) # Remove entry
-    echo -e "\nUser-added entries:\n"
-    awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++; print count, \$0}" /etc/hosts
-    read -p "Choose entry by number to remove: " number
-    entry=$(awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++} count==$number" /etc/hosts)
-    if [ -z "$entry" ]; then
-      echo "Invalid selection."
-    else
-      sed -i "/$entry/d" /etc/hosts
-      echo "Entry removed."
-    fi
-    ;;
-  5) # Wipe non-localhost entries
-    wipe_hosts
-    ;;
-  *) # Invalid option
-    echo "Invalid option. Please try again."
-    ;;
-esac
+      ip=$(echo "$entry" | awk '{print $1}')
+      while true; do
+        # Display the selected entry before each new append action
+        echo -e "\nCurrent entry:\n$entry"
+        read -p "Sub-hostname to append (or press Enter to return to the main menu): " subhostname
+        if [[ -z "$subhostname" ]]; then
+          echo "Returning to main menu..."
+          break
+        fi
+        if [[ $subhostname =~ ^[a-zA-Z0-9.-]+$ ]]; then
+          if ! grep -q "\b$subhostname\b" <<<"$entry"; then
+            # Append sub-hostname to the entry in /etc/hosts
+            sudo sed -i "s/^$entry\$/$entry $subhostname/" /etc/hosts
+            echo "Sub-hostname appended."
+          else
+            echo "Sub-hostname already exists in entry."
+          fi
+        else
+          echo "Invalid sub-hostname format."
+        fi
+        entry=$(grep "^$ip" /etc/hosts)  # Refresh entry in case it was updated
+      done
+      ;;
+    4) # Remove entry
+      while true; do
+        echo -e "\nUser-added entries:\n"
+        awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++; print count, \$0}" /etc/hosts
+        read -p "Choose entry by number to remove (or press Enter to return to the main menu): " number
+        if [[ -z "$number" ]]; then
+          echo "Returning to main menu..."
+          break
+        elif ! [[ "$number" =~ ^[0-9]+$ ]]; then
+          echo "Invalid selection. Please enter a valid number."
+          continue
+        fi
+        entry=$(awk "/127\.0\.0\.1\s+localhost|127\.0\.1\.1\s+kali|::1\s+localhost\s+ip6-localhost\s+ip6-loopback|ff02::1\s+ip6-allnodes|ff02::2\s+ip6-allrouters/ {next} {count++} count==$number" /etc/hosts)
+        if [ -z "$entry" ]; then
+          echo "Invalid selection. No such entry."
+          continue
+        fi
+        sed -i "/$entry/d" /etc/hosts
+        echo "Entry removed."
+        read -p "Remove another entry? (y/n): " remove_more
+        [[ "$remove_more" != "y" ]] && break
+      done
+      ;;
+    5) # Wipe non-localhost entries
+      wipe_hosts
+      ;;
+    *) # Invalid option
+      echo "Invalid option. Please try again."
+      ;;
+  esac
+done
